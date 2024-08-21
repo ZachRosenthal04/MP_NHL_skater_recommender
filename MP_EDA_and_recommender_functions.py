@@ -1,11 +1,14 @@
-#EDA_functions
 import pandas as pd
 import numpy as np
 
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
+from sklearn.compose import ColumnTransformer, make_column_selector
+from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import pairwise_distances
+
+# Load the datasets
+pd.set_option('display.max_columns', None) # Display Preference
 
 def calculate_playing_age(df, dob_col_name, age_col_name, season_year):
     """
@@ -65,47 +68,14 @@ def index_sorter(df):
     return df  # Return the modified dataframe
 
 
-
-# Create a function for joining all the season and on-ice totals columns 
-def concat_similar_dfs(df1, df2):
-    columns_df1 = set(df1.columns)
-    columns_df2 = set(df2.columns)
-    shared_columns = columns_df1.intersection(columns_df2)
-    df2_DROPPED_shared_columns = df2.drop(columns=shared_columns)
-    return pd.concat([df1, df2_DROPPED_shared_columns], axis=1)
-
-
-# List of columns to exclude from renaming
-excluded_columns = ['Player', 'Team', 'Position', 'Age', 'Height (in)', 'Weight (lbs)']
-def game_phase_col_renamer(df_list, excluded_col, str_to_add):
-    """
-    Rename columns in a list of pandas DataFrames, prepending a specified string to each column name
-    except for those listed in the excluded columns. The string is added only if it is not already present
-    at the beginning of the column name.
-
-    Parameters:
-    - df_list (list of pd.DataFrame): A list of pandas DataFrame objects whose column names are to be modified.
-    - excluded_col (list of str): Column names that should not be modified.
-    - str_to_add (str): The string to prepend to column names that are not in the excluded list and do not 
-      already start with this string.
-
-    Returns:
-    - list of pd.DataFrame: The list of DataFrames with modified column names. Note that the renaming is 
-      done in-place; this function returns the modified list as a convenience."""
-    excluded_columns= excluded_col
-    for df in df_list:
-        df.columns = [str_to_add + col if not col.startswith(str_to_add) and col not in excluded_col else col for col in df.columns]
-    return df_list
-
-# FROM: All_Seasons.ipynb - CREATE PLAYER INDECES NESTED DICTIONARIES
-def create_player_index_dict(df):
-    
-    """Create a nested dictionary from a DataFrame that maps player names to their indices for each season.
+def MP_create_player_index_dict(df):
+      """
+    Create a nested dictionary from a DataFrame that maps player names to their indices for each season.
 
     This function resets the index of the DataFrame to ensure that the index column 
-    holds the original row indices. It then groups the DataFrame by 'Player' and 'Season' 
+    holds the original row indices. It then groups the DataFrame by 'name' and 'season' 
     and aggregates the indices into a list for each group. After grouping, it pivots the DataFrame 
-    so each 'Player' name is a row with each 'Season' as columns, containing lists of indices 
+    so each players' 'name' is a row with each 'season' as columns, containing lists of indices 
     as values. Finally, it converts the pivoted DataFrame into a nested dictionary where each player's 
     name is a key to a dictionary mapping each season to the player's indices.
 
@@ -119,20 +89,22 @@ def create_player_index_dict(df):
     """
 
     # Reset the index 
-    df = df.reset_index()
+      df = df.reset_index()
 
     # Group by 'Player' and 'Season', then aggregate the original index values into a list.
-    grouped = df.groupby(['Player', 'Season'])['index'].agg(lambda x: list(x)).reset_index()
+      grouped = df.groupby(['name', 'season'])['index'].agg(lambda x: list(x)).reset_index()
 
     # Pivot the DataFrame to have 'Player' as rows and 'Season' as columns with list of indices as values.
-    pivot_df = grouped.pivot(index='Player', columns='Season', values='index')
+      pivot_df = grouped.pivot(index='name', columns='season', values='index')
 
     # Convert the pivoted DataFrame into a nested dictionary.
-    player_index_dict = pivot_df.apply(lambda row: row.dropna().to_dict(), axis=1).to_dict()
+      MP_player_index_dict = pivot_df.apply(lambda row: row.dropna().to_dict(), axis=1).to_dict()
 
-    return player_index_dict
+      return MP_player_index_dict
 
-def get_index_all_gamestates(player_name, AS_dict= player_index_dict_AS, ES_dict= player_index_dict_ES, PP_dict= player_index_dict_PP, PK_dict= player_index_dict_PK):
+def MP_get_index_all_gamestates(player_name, MP_AS_dict= MP_AS_player_dict, MP_5on5_dict= MP_5on5_player_dict, 
+                                MP_4on5_dict= MP_4on5_player_dict, MP_5on4_dict= MP_5on4_player_dict,
+                                MP_OS_dict= MP_OS_player_dict):
     """
     Returns a string with all the indices for each game state (All Strengths, Even Strength,
     Power Play, and Penalty Kill) for a given player.
@@ -148,27 +120,14 @@ def get_index_all_gamestates(player_name, AS_dict= player_index_dict_AS, ES_dict
     - str: A formatted string containing the indices for each game state for the player.
     """
     result_string= (
-        f"{player_name}'s ALL STRENGTHS indices are: {AS_dict.get(player_name)}\n"
-        f"{player_name}'s EVEN STRENGTH indices are: {ES_dict.get(player_name)}\n"
-        f"{player_name}'s POWER PLAY indices are: {PP_dict.get(player_name)}\n"
-        f"{player_name}'s PENALTY KILL indices are: {PK_dict.get(player_name)}"
+        f"{player_name}'s ALL SITUATIONS indices are: {MP_AS_dict.get(player_name)}\n"
+        f"{player_name}'s 5-ON-5 indices are: {MP_5on5_dict.get(player_name)}\n"
+        f"{player_name}'s 4-ON-5 indices are: {MP_4on5_dict.get(player_name)}\n"
+        f"{player_name}'s 5-ON-4 indices are: {MP_5on4_dict.get(player_name)}\n"
+        f"{player_name}'s OTHER SITUATIONS indices are: {MP_OS_dict.get(player_name)}\n"
     )
 
     return print(result_string)
-
-def get_players_baseline_gamestate_stats(original_gamestate_df, player_name):
-    """
-    Returns the baseline performance metrics of the player you are finding comparable players of 
-    so you can see how their stats are over the course of the seasons in the engine.
-    Args:
-    - original_gamestate_df (pd.DataFrame): DataFrame containing the original skater stats.
-    - player_name: must be a string of the full name of the player you want to look up, 
-    If player name is misspelled or there is no data for that player, 
-    the function returns an empty dataframe 
-
-    """
-    baseline_gamestate_stats = original_gamestate_df.loc[original_gamestate_df['Player'] == player_name]
-    return baseline_gamestate_stats
 
 def MP_get_players_baseline_gamestate_stats(original_gamestate_df, player_name):
     """
@@ -184,50 +143,35 @@ def MP_get_players_baseline_gamestate_stats(original_gamestate_df, player_name):
     baseline_gamestate_stats = original_gamestate_df.loc[original_gamestate_df['name'] == player_name]
     return baseline_gamestate_stats
 
-def recommend_skaters(original_gamestate_df, processed_gamestate_df, season, player_index, top_n=6):
-    """
-    Recommends skaters based on their stats using a preprocessed PCA features.
-
-    Args:
-    - original_gamestate_df (pd.DataFrame): DataFrame containing the original skater stats.
-        Acceptable inputs for original_gamestate_df are: [df_all_stats_AS, df_all_stats_ES, df_all_stats_PP, df_all_stats_PK]
-    - processed_gamestate_df (pd.DataFrame): PCA-transformed and scaled features of the skaters.
-        Acceptable inputs for processed_gamestate_df are: 
-        [df_all_stats_AS_encoded_dropped_scaled_pca, df_all_stats_ES_encoded_dropped_scaled_pca, 
-        df_all_stats_PP_encoded_dropped_scaled_pca, df_all_stats_PK_encoded_dropped_scaled_pca]
-    - season (int): The target season for comparison.
-        Acceptable inputs for season are: 2022, 2023, 2024
-    - player_index (int): Index of the player in the DataFrame to get recommendations for.
-        player_index as accessed through the function: get_index_all_gamestates() 
-    - top_n (int): Number of top recommendations to return.
-
-    Returns:
-    - pd.DataFrame: DataFrame containing the top_n recommended skaters for the given player in the specified season.
-    """
-
-    # Filter DataFrame for the target season
-    target_season_data = processed_gamestate_df[original_gamestate_df['Season'] == season]
-    # Compute pairwise distances between all skaters and those from the target season
-    distances = pairwise_distances(processed_gamestate_df, target_season_data)
-    # Find the indices of the closest skaters
-    indices = np.argsort(distances, axis=1)[:, :top_n]
-    # Retrieve the recommendations from the original stats DataFrame
-    recommended_skaters = original_gamestate_df[original_gamestate_df['Season'] == season].iloc[indices[player_index], :]
-
-    return recommended_skaters
+# This is the processing pipeline:
+# Columns not to included in the processing:
+col_not_processed = ['playerId', 'season' , 'name', 'team', 'situation', 'iceTimeRank', 'I_F_shifts',
+                      'nationality' ,'birthDate', 'weight','height', 'shoots', 'age']
 
 
-def made_playoffs(row):
-    ''' made_playoffs functon creates the 'Playoff_Team' column in each of the game states dataframes using the .apply() method.
-    Future additions would just need to create a variable for the list of playoff teams and then and a new 'elif' line for the most recent season.'''
-    if row['Season'] == 2022 and row['Team'] in playoff_teams_2022:
-        return 1
-    elif row['Season'] == 2023 and row['Team'] in playoff_teams_2023:
-        return 1
-    elif row['Season'] == 2024 and row['Team'] in playoff_teams_2024:
-        return 1
-    else:
-        return 0
+# Column transformer
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), make_column_selector(dtype_include=['int64', 'float64'])),
+        ('age_group', Pipeline([
+            ('ordinal', OrdinalEncoder(categories=[['New Pro', 'Young Pro', 'Prime Age', 'Vet', 'Old Vet']])),
+            ('scaler', StandardScaler())  # Scale the ordinal-encoded age_group
+        ]), ['age_group']),
+        ('position', Pipeline([
+            ('onehot', OneHotEncoder()),  # Apply OneHotEncoder to 'position'
+            ('scaler', StandardScaler(with_mean=False))  # Apply StandardScaler after OneHotEncoder
+        ]), ['position'])
+    ])
+
+# My current Pipeline
+MP_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('pca', PCA())
+])
+
+# Columns not to included in the processing:
+col_not_processed = ['playerId', 'season' , 'name', 'team', 'situation', 'iceTimeRank', 'I_F_shifts',
+                      'nationality' ,'birthDate', 'weight','height', 'shoots', 'age', 'gameScore']
 
 def MP_recommend_skaters(original_gamestate_df, processed_gamestate_df, season, player_index, top_n=6):
     """
@@ -264,3 +208,20 @@ def MP_recommend_skaters(original_gamestate_df, processed_gamestate_df, season, 
     return MP_recommended_skaters
 
 
+# Get feature names after the transformation
+def get_feature_names(column_transformer):
+    output_features = []
+    for name, transformer, features in column_transformer.transformers_:
+        if transformer == 'drop' or transformer is None:
+            continue
+        if isinstance(transformer, Pipeline):
+            transformer = transformer.named_steps['onehot'] if 'onehot' in transformer.named_steps else transformer
+        try:
+            if hasattr(transformer, 'get_feature_names_out'):
+                feature_names = transformer.get_feature_names_out(features)
+                output_features.extend(feature_names)
+            else:
+                output_features.extend(features)
+        except NotFittedError:
+            output_features.extend(features)
+    return output_features
