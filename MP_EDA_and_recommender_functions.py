@@ -225,3 +225,45 @@ def get_feature_names(column_transformer):
         except NotFittedError:
             output_features.extend(features)
     return output_features
+
+def calculate_ZR_gameScore(df):
+    """
+    Calculates the ZR_gameScore for a given DataFrame.
+
+    Args:
+        df: The DataFrame containing player statistics.
+
+    Returns:
+        The DataFrame with the 'ZR_gameScore' column added.
+    """
+
+    df['ZR_gameScore'] = (
+        (df['I_F_goals'] * 0.75) 
+        + (df['I_F_primaryAssists'] * 0.7) 
+        + (df['I_F_secondaryAssists'] * 0.55)
+        + (df['I_F_shotsOnGoal'] * 0.075) 
+        + (df['shotsBlockedByPlayer'] * 0.05) 
+        + (df['penaltiesDrawn'] * 0.15) 
+        - (df['penalties'] * 0.15)
+        + (df['I_F_hits'] * 0.01) 
+        - (df['I_F_dZoneGiveaways'] * 0.03) 
+        + (df['I_F_takeaways'] * 0.015) 
+        - (df['I_F_giveaways'] * 0.015)
+        + (df['onIce_corsiPercentage']) 
+        + (df['faceoffsWon'] * 0.01) 
+        - (df['faceoffsLost'] * 0.01)
+        + (df['OnIce_F_goals'] * 0.15) 
+        - (df['OnIce_A_goals'] * 0.15)
+    )
+
+    return df
+
+from sklearn.preprocessing import MinMaxScaler
+
+# Group by 'season' and apply MinMaxScaler within each group
+def scale_by_season(group):
+    if len(group) == 1:  # Handle the case of only one value in a season
+        return 100  # Assign the maximum rating if there's only one player
+    else:
+        scaler = MinMaxScaler(feature_range=(0, 100))
+        return scaler.fit_transform(group.values.reshape(-1, 1)).ravel()
